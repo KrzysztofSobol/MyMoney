@@ -7,8 +7,7 @@ A **local personal budgeting app**: bank groups, accounts, and transactions in a
 - **Groups & accounts** — custom names, group colors, optional account number
 - **CSV import** — format detection (mBank list / statement, Pekao), hash-based deduplication
 - **Account dashboard** — income, expenses, balance, transaction list
-- **Overview (all groups)** — aggregate stats, cumulative balance chart, per-group summaries
-- **Editing** — transaction category, clear transactions for an account or a whole group
+- **Overview ** — aggregate stats, cumulative balance chart
 
 ## Preview
 
