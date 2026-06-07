@@ -1,14 +1,13 @@
 # MyMoney
 
-A **local personal budgeting app**: bank groups, accounts, and transactions in a single SQLite database. Import official bank CSV exports (e.g. mBank, Pekao); duplicates are filtered automatically. The UI is React + Vite, the API is a small Express server with `better-sqlite3` — everything runs on your machine, no cloud.
+A **local personal budgeting app**: bank groups, accounts, and transactions in a single SQLite database. Import official bank CSV exports, duplicates are filtered automatically. The UI is React + Vite, the API is a small Express server with `better-sqlite3` — everything runs on your machine, no cloud.
 
 ## Features
 
 - **Groups & accounts** — custom names, group colors, optional account number
 - **CSV import** — format detection (mBank list / statement, Pekao), hash-based deduplication
 - **Account dashboard** — income, expenses, balance, transaction list
-- **Overview (all groups)** — aggregate stats, cumulative balance chart, per-group summaries
-- **Editing** — transaction category, clear transactions for an account or a whole group
+- **Overview** — aggregate stats, cumulative balance chart
 
 ## Preview
 
