@@ -10,6 +10,7 @@ export interface Account {
   bank_group_id: number;
   name: string;
   account_number: string | null;
+  api_account_id: string | null;
   created_at: string;
 }
 
@@ -32,6 +33,42 @@ export interface ImportSummary {
   parsedCount: number;
   importedCount: number;
   duplicateCount: number;
+}
+
+export type BankCode = "mbank" | "pekao" | "credit_agricole";
+export type TransactionSourceType = "file" | "api";
+export type ApiProviderCode = "enable-banking";
+export type SyncCallStatus = "success" | "failed";
+
+export interface BankSyncCall {
+  id: number;
+  bank: BankCode;
+  source_type: TransactionSourceType;
+  api_provider: ApiProviderCode | null;
+  account_id: number | null;
+  status: SyncCallStatus;
+  requested_from: string | null;
+  requested_to: string | null;
+  started_at: string;
+  finished_at: string;
+  imported_count: number;
+  duplicate_count: number;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface BankApiSyncSummary {
+  bank: BankCode;
+  apiProvider: ApiProviderCode;
+  sourceType: "api";
+  accountId: number;
+  externalAccountId: string;
+  fromDate: string | null;
+  toDate: string;
+  parsedCount: number;
+  importedCount: number;
+  duplicateCount: number;
+  syncCall: BankSyncCall;
 }
 
 // Predefined palette — cycles automatically when groups are created

@@ -187,6 +187,15 @@ export function OverviewDashboard({
       return { chartData: [], rangeLabel: "", totalDays: 0 };
     }
 
+    // First transaction date per group
+    const firstTxByGroup = new Map<number, string>();
+    for (const tx of allTransactions) {
+      const group = accountToGroup.get(tx.account_id);
+      if (!group) continue;
+      const prev = firstTxByGroup.get(group.id);
+      if (!prev || tx.transaction_date < prev) firstTxByGroup.set(group.id, tx.transaction_date);
+    }
+
     // Pre-process daily net per group
     const byDateGroup = new Map<string, Map<number, number>>();
     for (const tx of allTransactions) {
@@ -226,7 +235,25 @@ export function OverviewDashboard({
 
     // Build daily points
     const running = new Map<number, number>(initBal);
-    const rawData: Record<string, number | string>[] = [];
+    const rawData: Record<string, number | string | null>[] = [];
+
+    // Anchor point: one day before startDate for groups already active before window
+    const anchorD = new Date(parseLocalYMD(startDate));
+    anchorD.setDate(anchorD.getDate() - 1);
+    const anchorEntry: Record<string, number | string | null> = { date: toLocalYMD(anchorD) };
+    let hasAnchor = false;
+    for (const group of bankGroups) {
+      const firstDate = firstTxByGroup.get(group.id);
+      if (firstDate && firstDate <= startDate) {
+        anchorEntry[`g_${group.id}`] = 0;
+        hasAnchor = true;
+      } else {
+        anchorEntry[`g_${group.id}`] = null;
+      }
+    }
+    anchorEntry.total = null;
+    if (hasAnchor) rawData.push(anchorEntry);
+
     let cur = parseLocalYMD(startDate);
     const end = parseLocalYMD(endDate);
 
@@ -238,11 +265,21 @@ export function OverviewDashboard({
           running.set(gId, (running.get(gId) ?? 0) + amount);
         }
       }
-      const entry: Record<string, number | string> = { date: dateStr };
+      const entry: Record<string, number | string | null> = { date: dateStr };
       let total = 0;
       for (const group of bankGroups) {
         const val = Number((running.get(group.id) ?? 0).toFixed(2));
-        entry[`g_${group.id}`] = val;
+        const firstDate = firstTxByGroup.get(group.id);
+        if (!firstDate) {
+          entry[`g_${group.id}`] = null;
+        } else if (dateStr >= firstDate) {
+          entry[`g_${group.id}`] = val;
+        } else {
+          // day before firstDate: anchor at 0 so line lifts off from ground
+          const nextDay = new Date(cur);
+          nextDay.setDate(nextDay.getDate() + 1);
+          entry[`g_${group.id}`] = toLocalYMD(nextDay) === firstDate ? 0 : null;
+        }
         total += val;
       }
       entry.total = Number(total.toFixed(2));
@@ -418,7 +455,7 @@ export function OverviewDashboard({
                   stroke={group.color}
                   strokeWidth={1.5}
                   dot={false}
-                  connectNulls
+                  connectNulls={false}
                   isAnimationActive={false}
                   activeDot={{ r: 4, fill: group.color, strokeWidth: 0 }}
                 />

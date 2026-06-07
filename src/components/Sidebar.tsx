@@ -17,6 +17,10 @@ interface SidebarProps {
   onCreateGroup: (name: string, color: string) => Promise<BankGroup>;
   onCreateAccount: (groupId: number, name: string, accountNumber?: string) => Promise<Account>;
   onUpdateGroupColor: (groupId: number, color: string) => Promise<void>;
+  onUpdateGroupName: (groupId: number, name: string) => Promise<void>;
+  onDeleteGroup: (groupId: number) => Promise<void>;
+  onUpdateAccount: (accountId: number, groupId: number, name: string, apiAccountId: string | null) => Promise<void>;
+  onDeleteAccount: (accountId: number, groupId: number) => Promise<void>;
 }
 
 export function Sidebar({
@@ -27,25 +31,59 @@ export function Sidebar({
   activeView,
   sidebarOpen,
   autoColor,
-  onSelectGroup,
   onSelectAccount,
   onNavigate,
   onCreateGroup,
   onCreateAccount,
   onUpdateGroupColor,
+  onUpdateGroupName,
+  onDeleteGroup,
+  onUpdateAccount,
+  onDeleteAccount,
 }: SidebarProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  // Add group
   const [addingGroup, setAddingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupColor, setNewGroupColor] = useState(autoColor);
   const [groupError, setGroupError] = useState<string | null>(null);
+
+  // Add account
   const [addingAccountFor, setAddingAccountFor] = useState<number | null>(null);
   const [newAccountName, setNewAccountName] = useState("");
   const [accountError, setAccountError] = useState<string | null>(null);
+
+  // Color picker
   const [colorPickerForGroupId, setColorPickerForGroupId] = useState<number | null>(null);
   const [groupColorError, setGroupColorError] = useState<string | null>(null);
+
+  // Rename group
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [editGroupError, setEditGroupError] = useState<string | null>(null);
+
+  // Delete group
+  const [confirmDeleteGroupId, setConfirmDeleteGroupId] = useState<number | null>(null);
+  const [deletingGroup, setDeletingGroup] = useState(false);
+  const [deleteGroupError, setDeleteGroupError] = useState<string | null>(null);
+
+  // Edit account (name + api id)
+  const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
+  const [editAccountName, setEditAccountName] = useState("");
+  const [editAccountApiId, setEditAccountApiId] = useState("");
+  const [editAccountGroupId, setEditAccountGroupId] = useState<number | null>(null);
+  const [editAccountError, setEditAccountError] = useState<string | null>(null);
+
+  // Delete account
+  const [confirmDeleteAccountId, setConfirmDeleteAccountId] = useState<number | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
+
   const groupInputRef = useRef<HTMLInputElement>(null);
   const accountInputRef = useRef<HTMLInputElement>(null);
+  const editGroupInputRef = useRef<HTMLInputElement>(null);
+  const editAccountInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (selectedGroupId !== null) {
@@ -64,6 +102,14 @@ export function Sidebar({
     if (addingAccountFor !== null) accountInputRef.current?.focus();
   }, [addingAccountFor]);
 
+  useEffect(() => {
+    if (editingGroupId !== null) editGroupInputRef.current?.focus();
+  }, [editingGroupId]);
+
+  useEffect(() => {
+    if (editingAccountId !== null) editAccountInputRef.current?.focus();
+  }, [editingAccountId]);
+
   function toggleGroup(id: number) {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
@@ -71,6 +117,23 @@ export function Sidebar({
       else next.add(id);
       return next;
     });
+  }
+
+  function openEditGroup(group: BankGroup) {
+    setEditingGroupId(group.id);
+    setEditGroupName(group.name);
+    setEditGroupError(null);
+    setColorPickerForGroupId(null);
+    setConfirmDeleteGroupId(null);
+  }
+
+  function openEditAccount(account: Account, groupId: number) {
+    setEditingAccountId(account.id);
+    setEditAccountGroupId(groupId);
+    setEditAccountName(account.name);
+    setEditAccountApiId(account.api_account_id ?? "");
+    setEditAccountError(null);
+    setConfirmDeleteAccountId(null);
   }
 
   async function submitGroup(e: React.FormEvent) {
@@ -88,6 +151,32 @@ export function Sidebar({
     }
   }
 
+  async function submitRenameGroup(e: React.FormEvent) {
+    e.preventDefault();
+    const name = editGroupName.trim();
+    if (!name || editingGroupId === null) return;
+    setEditGroupError(null);
+    try {
+      await onUpdateGroupName(editingGroupId, name);
+      setEditingGroupId(null);
+    } catch (err) {
+      setEditGroupError((err as Error).message);
+    }
+  }
+
+  async function submitDeleteGroup(groupId: number) {
+    setDeletingGroup(true);
+    setDeleteGroupError(null);
+    try {
+      await onDeleteGroup(groupId);
+      setConfirmDeleteGroupId(null);
+    } catch (err) {
+      setDeleteGroupError((err as Error).message);
+    } finally {
+      setDeletingGroup(false);
+    }
+  }
+
   async function submitAccount(e: React.FormEvent, groupId: number) {
     e.preventDefault();
     const name = newAccountName.trim();
@@ -99,6 +188,37 @@ export function Sidebar({
       setAddingAccountFor(null);
     } catch (err) {
       setAccountError((err as Error).message);
+    }
+  }
+
+  async function submitEditAccount(e: React.FormEvent) {
+    e.preventDefault();
+    const name = editAccountName.trim();
+    if (!name || editingAccountId === null || editAccountGroupId === null) return;
+    setEditAccountError(null);
+    try {
+      await onUpdateAccount(
+        editingAccountId,
+        editAccountGroupId,
+        name,
+        editAccountApiId.trim() || null,
+      );
+      setEditingAccountId(null);
+    } catch (err) {
+      setEditAccountError((err as Error).message);
+    }
+  }
+
+  async function submitDeleteAccount(accountId: number, groupId: number) {
+    setDeletingAccount(true);
+    setDeleteAccountError(null);
+    try {
+      await onDeleteAccount(accountId, groupId);
+      setConfirmDeleteAccountId(null);
+    } catch (err) {
+      setDeleteAccountError((err as Error).message);
+    } finally {
+      setDeletingAccount(false);
     }
   }
 
@@ -126,6 +246,20 @@ export function Sidebar({
           <span className="icon icon--sm">upload_file</span>
           Import CSV
         </button>
+        <button
+          className={`sidebar-nav-link${activeView === "budget" ? " sidebar-nav-link--active" : ""}`}
+          onClick={() => onNavigate("budget")}
+        >
+          <span className="icon icon--sm">account_balance_wallet</span>
+          Budget
+        </button>
+        <button
+          className={`sidebar-nav-link${activeView === "advanced" ? " sidebar-nav-link--active" : ""}`}
+          onClick={() => onNavigate("advanced")}
+        >
+          <span className="icon icon--sm">settings</span>
+          Advanced
+        </button>
       </nav>
 
       <div className="sidebar-portfolios">
@@ -135,49 +269,105 @@ export function Sidebar({
           const accounts = accountsByGroup[group.id] ?? [];
           const isExpanded = expandedGroups.has(group.id);
           const isGroupActive = selectedGroupId === group.id && selectedAccountId === null;
+          const isEditingThisGroup = editingGroupId === group.id;
+          const isConfirmingDeleteGroup = confirmDeleteGroupId === group.id;
 
           return (
             <div key={group.id} className="sidebar-group">
-              <div className="sidebar-group-header-row">
-                <button
-                  type="button"
-                  className={`sidebar-group-header${isGroupActive ? " sidebar-group-header--active" : ""}`}
-                  onClick={() => {
-                    toggleGroup(group.id);
-                    onSelectGroup(group.id);
-                  }}
-                >
-                  <div className="sidebar-group-header-inner">
-                    <span
-                      className="sidebar-group-color-dot"
-                      style={{ background: group.color }}
+              {/* ── Group header row ── */}
+              {isEditingThisGroup ? (
+                <div style={{ padding: "4px 12px 4px 24px" }}>
+                  <form onSubmit={(e) => void submitRenameGroup(e)} className="sidebar-inline-form sidebar-inline-form--group" style={{ padding: 0 }}>
+                    <input
+                      ref={editGroupInputRef}
+                      value={editGroupName}
+                      onChange={(e) => setEditGroupName(e.target.value)}
+                      placeholder="Group name"
+                      maxLength={60}
                     />
-                    <span>{group.name}</span>
-                  </div>
-                  {accounts.length > 0 && (
-                    <span
-                      className={`icon sidebar-chevron${isExpanded ? " sidebar-chevron--open" : ""}`}
+                    <button type="submit" title="Save">
+                      <span className="icon icon--sm">check</span>
+                    </button>
+                    <button
+                      type="button"
+                      title="Cancel"
+                      onClick={() => { setEditingGroupId(null); setEditGroupError(null); }}
                     >
-                      expand_more
-                    </span>
+                      <span className="icon icon--sm">close</span>
+                    </button>
+                  </form>
+                  {editGroupError && (
+                    <p className="sidebar-inline-form-error" style={{ paddingLeft: 0, marginTop: 4 }}>
+                      {editGroupError}
+                    </p>
                   )}
-                </button>
-                <button
-                  type="button"
-                  className="sidebar-group-palette"
-                  title="Change group color"
-                  aria-expanded={colorPickerForGroupId === group.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setGroupColorError(null);
-                    setColorPickerForGroupId((id) => (id === group.id ? null : group.id));
-                  }}
-                >
-                  <span className="icon icon--sm">palette</span>
-                </button>
-              </div>
+                </div>
+              ) : (
+                <div className="sidebar-group-header-row">
+                  <button
+                    type="button"
+                    className={`sidebar-group-header${isGroupActive ? " sidebar-group-header--active" : ""}`}
+                    onClick={() => toggleGroup(group.id)}
+                  >
+                    <div className="sidebar-group-header-inner">
+                      <span
+                        className="sidebar-group-color-dot"
+                        style={{ background: group.color }}
+                      />
+                      <span>{group.name}</span>
+                    </div>
+                    {accounts.length > 0 && (
+                      <span
+                        className={`icon sidebar-chevron${isExpanded ? " sidebar-chevron--open" : ""}`}
+                      >
+                        expand_more
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="sidebar-group-palette"
+                    title="Change group color"
+                    aria-expanded={colorPickerForGroupId === group.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setGroupColorError(null);
+                      setConfirmDeleteGroupId(null);
+                      setColorPickerForGroupId((id) => (id === group.id ? null : group.id));
+                    }}
+                  >
+                    <span className="icon icon--sm">palette</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sidebar-group-palette"
+                    title="Rename group"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditGroup(group);
+                    }}
+                  >
+                    <span className="icon icon--sm">edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sidebar-group-palette sidebar-group-palette--danger"
+                    title="Delete group"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setColorPickerForGroupId(null);
+                      setEditingGroupId(null);
+                      setDeleteGroupError(null);
+                      setConfirmDeleteGroupId((id) => (id === group.id ? null : group.id));
+                    }}
+                  >
+                    <span className="icon icon--sm">delete</span>
+                  </button>
+                </div>
+              )}
 
-              {colorPickerForGroupId === group.id && (
+              {/* ── Color picker panel ── */}
+              {!isEditingThisGroup && colorPickerForGroupId === group.id && (
                 <div className="sidebar-group-color-panel">
                   <p className="sidebar-group-color-panel-label">Color</p>
                   <div className="color-swatches">
@@ -229,26 +419,195 @@ export function Sidebar({
                 </div>
               )}
 
+              {/* ── Delete group confirmation ── */}
+              {isConfirmingDeleteGroup && (
+                <div className="sidebar-delete-panel">
+                  <p className="sidebar-delete-panel-text">
+                    Delete <strong>{group.name}</strong>?{" "}
+                    <span style={{ color: "var(--text-dim)" }}>
+                      All accounts and transactions will be removed.
+                    </span>
+                  </p>
+                  <div className="sidebar-delete-panel-actions">
+                    <button
+                      type="button"
+                      className="sidebar-cancel-btn"
+                      disabled={deletingGroup}
+                      onClick={() => { setConfirmDeleteGroupId(null); setDeleteGroupError(null); }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="sidebar-danger-btn"
+                      disabled={deletingGroup}
+                      onClick={() => void submitDeleteGroup(group.id)}
+                    >
+                      <span className="icon icon--sm">delete_forever</span>
+                      {deletingGroup ? "Deleting…" : "Delete"}
+                    </button>
+                  </div>
+                  {deleteGroupError && (
+                    <p className="sidebar-inline-form-error" style={{ paddingLeft: 0, marginTop: 4 }}>
+                      {deleteGroupError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Accounts list ── */}
               {isExpanded && (
                 <div className="sidebar-accounts">
-                  {accounts.map((account) => (
-                    <button
-                      key={account.id}
-                      className={`sidebar-account-btn${selectedAccountId === account.id ? " sidebar-account-btn--active" : ""}`}
-                      onClick={() => onSelectAccount(account.id, group.id)}
-                    >
-                      <span
-                        className="sidebar-account-dot"
-                        style={
-                          selectedAccountId === account.id
-                            ? { background: group.color }
-                            : undefined
-                        }
-                      />
-                      {account.name}
-                    </button>
-                  ))}
+                  {accounts.map((account) => {
+                    const isEditingThisAccount = editingAccountId === account.id;
+                    const isConfirmingDeleteAccount = confirmDeleteAccountId === account.id;
 
+                    return (
+                      <div key={account.id}>
+                        {/* Account row */}
+                        <div className="sidebar-account-row">
+                          <button
+                            className={`sidebar-account-btn${selectedAccountId === account.id ? " sidebar-account-btn--active" : ""}`}
+                            onClick={() => onSelectAccount(account.id, group.id)}
+                          >
+                            <span
+                              className="sidebar-account-dot"
+                              style={
+                                selectedAccountId === account.id
+                                  ? { background: group.color }
+                                  : undefined
+                              }
+                            />
+                            <span className="sidebar-account-name">{account.name}</span>
+                            {!account.api_account_id && (
+                              <span
+                                className="sidebar-account-no-api"
+                                title="Enable Banking ID not set"
+                              >
+                                <span className="icon icon--sm">link_off</span>
+                              </span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="sidebar-account-action-btn"
+                            title="Edit account"
+                            onClick={() => {
+                              if (isEditingThisAccount) {
+                                setEditingAccountId(null);
+                              } else {
+                                openEditAccount(account, group.id);
+                              }
+                            }}
+                          >
+                            <span className="icon icon--sm">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="sidebar-account-action-btn sidebar-account-action-btn--danger"
+                            title="Delete account"
+                            onClick={() => {
+                              if (isConfirmingDeleteAccount) {
+                                setConfirmDeleteAccountId(null);
+                              } else {
+                                setConfirmDeleteAccountId(account.id);
+                                setDeleteAccountError(null);
+                                setEditingAccountId(null);
+                              }
+                            }}
+                          >
+                            <span className="icon icon--sm">delete</span>
+                          </button>
+                        </div>
+
+                        {/* Edit account panel */}
+                        {isEditingThisAccount && (
+                          <form
+                            className="sidebar-account-edit-panel"
+                            onSubmit={(e) => void submitEditAccount(e)}
+                          >
+                            <label className="sidebar-edit-label">Name</label>
+                            <div className="sidebar-inline-form" style={{ padding: 0, marginBottom: 6 }}>
+                              <input
+                                ref={editAccountInputRef}
+                                value={editAccountName}
+                                onChange={(e) => setEditAccountName(e.target.value)}
+                                placeholder="Account name"
+                                maxLength={60}
+                              />
+                            </div>
+                            <label className="sidebar-edit-label">
+                              Enable Banking ID
+                              <span className="sidebar-edit-label-hint"> (api_account_id)</span>
+                            </label>
+                            <div className="sidebar-inline-form" style={{ padding: 0, marginBottom: 8 }}>
+                              <input
+                                value={editAccountApiId}
+                                onChange={(e) => setEditAccountApiId(e.target.value)}
+                                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                              />
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button type="submit" className="sidebar-confirm-btn">
+                                <span className="icon icon--sm">check</span>
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                className="sidebar-cancel-btn"
+                                onClick={() => { setEditingAccountId(null); setEditAccountError(null); }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                            {editAccountError && (
+                              <p className="sidebar-inline-form-error" style={{ paddingLeft: 0, marginTop: 4 }}>
+                                {editAccountError}
+                              </p>
+                            )}
+                          </form>
+                        )}
+
+                        {/* Delete account confirmation */}
+                        {isConfirmingDeleteAccount && (
+                          <div className="sidebar-delete-panel">
+                            <p className="sidebar-delete-panel-text">
+                              Delete <strong>{account.name}</strong>?{" "}
+                              <span style={{ color: "var(--text-dim)" }}>
+                                All transactions will be removed.
+                              </span>
+                            </p>
+                            <div className="sidebar-delete-panel-actions">
+                              <button
+                                type="button"
+                                className="sidebar-cancel-btn"
+                                disabled={deletingAccount}
+                                onClick={() => { setConfirmDeleteAccountId(null); setDeleteAccountError(null); }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                className="sidebar-danger-btn"
+                                disabled={deletingAccount}
+                                onClick={() => void submitDeleteAccount(account.id, group.id)}
+                              >
+                                <span className="icon icon--sm">delete_forever</span>
+                                {deletingAccount ? "Deleting…" : "Delete"}
+                              </button>
+                            </div>
+                            {deleteAccountError && (
+                              <p className="sidebar-inline-form-error" style={{ paddingLeft: 0, marginTop: 4 }}>
+                                {deleteAccountError}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Add account form */}
                   {addingAccountFor === group.id ? (
                     <>
                       <form

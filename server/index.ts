@@ -1,3 +1,4 @@
+import "./env";
 import cors from "cors";
 import express from "express";
 import multer from "multer";
@@ -10,6 +11,7 @@ import {
   deleteBankGroup,
   deleteTransaction,
   getAccounts,
+  getBankSyncCalls,
   getAllTransactions,
   getBankGroups,
   getTransactions,
@@ -17,8 +19,14 @@ import {
   updateAccount,
   updateBankGroup,
   updateTransactionCategory,
+  saveEnableBankingSession,
+  getEnableBankingSessions,
+  deleteEnableBankingSession,
 } from "./database";
 import { parseCsvFile } from "./csvParser";
+import { syncBankApiTransactions } from "./bankApiSync";
+import { fetchEnableBankingSession, startEnableBankingAuth, authorizeEnableBankingSession } from "./enableBankingApiSource";
+import type { BankCode } from "./types";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -94,12 +102,13 @@ app.post("/api/accounts", (req, res) => {
   const bankGroupId = Number(req.body?.bankGroupId);
   const name = String(req.body?.name ?? "").trim();
   const accountNumber = String(req.body?.accountNumber ?? "").trim() || null;
+  const apiAccountId = String(req.body?.apiAccountId ?? "").trim() || null;
   if (!bankGroupId || !name) {
     res.status(400).send("bankGroupId and name are required.");
     return;
   }
   try {
-    res.status(201).json(createAccount(bankGroupId, name, accountNumber));
+    res.status(201).json(createAccount(bankGroupId, name, accountNumber, apiAccountId));
   } catch (error) {
     res.status(400).send((error as Error).message);
   }
@@ -109,11 +118,12 @@ app.put("/api/accounts/:id", (req, res) => {
   const id = Number(req.params.id);
   const name = String(req.body?.name ?? "").trim();
   const accountNumber = String(req.body?.accountNumber ?? "").trim() || null;
+  const apiAccountId = String(req.body?.apiAccountId ?? "").trim() || null;
   if (!id || !name) {
     res.status(400).send("id and name are required.");
     return;
   }
-  res.json(updateAccount(id, name, accountNumber));
+  res.json(updateAccount(id, name, accountNumber, apiAccountId));
 });
 
 app.delete("/api/accounts/:id/transactions", (req, res) => {
@@ -135,6 +145,15 @@ app.delete("/api/accounts/:id", (req, res) => {
 
 app.get("/api/transactions/all", (_req, res) => {
   res.json(getAllTransactions());
+});
+
+app.get("/api/bank-sync-calls", (req, res) => {
+  const accountId = req.query.accountId ? Number(req.query.accountId) : undefined;
+  if (req.query.accountId && !accountId) {
+    res.status(400).send("accountId must be a number.");
+    return;
+  }
+  res.json(getBankSyncCalls(accountId));
 });
 
 app.get("/api/transactions", (req, res) => {
@@ -184,6 +203,113 @@ app.post("/api/import", upload.single("file"), (req, res) => {
     });
   } catch (error) {
     res.status(400).send((error as Error).message);
+  }
+});
+
+app.get("/api/enable-banking/sessions/:sessionId", async (req, res) => {
+  const sessionId = String(req.params.sessionId ?? "").trim();
+  if (!sessionId) {
+    res.status(400).json({ error: "sessionId is required." });
+    return;
+  }
+  try {
+    const result = await fetchEnableBankingSession(sessionId);
+    res.json(result);
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post("/api/enable-banking/auth", async (req, res) => {
+  const aspspName = String(req.body?.aspspName ?? "").trim();
+  const aspspCountry = String(req.body?.aspspCountry ?? "").trim();
+  const redirectUrl = String(req.body?.redirectUrl ?? "").trim();
+  const psuType = String(req.body?.psuType ?? "personal").trim();
+  const validUntil = String(req.body?.validUntil ?? "").trim();
+  const state = String(req.body?.state ?? "").trim();
+  if (!aspspName || !aspspCountry || !redirectUrl || !validUntil || !state) {
+    res.status(400).json({ error: "aspspName, aspspCountry, redirectUrl, validUntil and state are required." });
+    return;
+  }
+  try {
+    const result = await startEnableBankingAuth({ aspspName, aspspCountry, redirectUrl, psuType, validUntil, state });
+    res.json(result);
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get("/api/enable-banking/sessions", (_req, res) => {
+  const rows = getEnableBankingSessions();
+  res.json(rows.map((r) => ({
+    ...r,
+    accounts: JSON.parse(r.accounts_json || "[]") as unknown[],
+  })));
+});
+
+app.post("/api/enable-banking/sessions", async (req, res) => {
+  const code = String(req.body?.code ?? "").trim();
+  if (!code) {
+    res.status(400).json({ error: "code is required." });
+    return;
+  }
+  try {
+    const result = await authorizeEnableBankingSession(code) as {
+      session_id?: string;
+      accounts?: { uid?: string; name?: string; account_id?: Record<string, string> }[];
+      accounts_data?: { uid?: string }[];
+      aspsp?: { name?: string; country?: string };
+      access?: { valid_until?: string };
+    };
+    if (result.session_id) {
+      const accounts = Array.isArray(result.accounts) && result.accounts.length > 0
+        ? result.accounts
+        : (result.accounts_data ?? []);
+      saveEnableBankingSession({
+        sessionId: result.session_id,
+        aspspName: result.aspsp?.name ?? "",
+        aspspCountry: result.aspsp?.country ?? "",
+        validUntil: result.access?.valid_until ?? null,
+        accounts,
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.delete("/api/enable-banking/sessions/:sessionId", async (req, res) => {
+  const sessionId = String(req.params.sessionId ?? "").trim();
+  deleteEnableBankingSession(sessionId);
+  res.status(204).send();
+});
+
+app.post("/api/bank-api-sync", async (req, res) => {
+  const bank = String(req.body?.bank ?? "").trim().toLowerCase() as BankCode;
+  const accountId = Number(req.body?.accountId);
+  if (!bank || !accountId) {
+    res.status(400).send("bank and accountId are required.");
+    return;
+  }
+
+  try {
+    const result = await syncBankApiTransactions({
+      bank,
+      accountId,
+      fromDate: req.body?.fromDate ? String(req.body.fromDate).trim() : null,
+      toDate: req.body?.toDate ? String(req.body.toDate).trim() : null,
+      fullHistory: Boolean(req.body?.fullHistory),
+    });
+    res.json(result);
+  } catch (error) {
+    const syncCall = (error as { syncCall?: unknown }).syncCall;
+    const message = error instanceof Error ? error.message : String(error);
+    if (syncCall) {
+      res.status(502).json({ error: message, syncCall });
+      return;
+    }
+    res.status(400).send(message);
   }
 });
 

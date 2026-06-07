@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -10,12 +10,13 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import type { Account, BankGroup, Transaction } from "../types";
+import type { Account, BankApiSyncSummary, BankCode, BankGroup, Transaction } from "../types";
 
 interface DashboardProps {
   transactions: Transaction[];
   selectedGroup: BankGroup | null;
   selectedAccount: Account | null;
+  onSyncAccount: (bank: BankCode, accountId: number) => Promise<BankApiSyncSummary>;
   onClearAccount: (accountId: number) => Promise<void>;
   onClearGroup: (groupId: number) => Promise<void>;
 }
@@ -31,6 +32,31 @@ function formatPLN(n: number): string {
 function formatDate(dateStr: string): string {
   const [y, m, d] = dateStr.split("-");
   return `${d}.${m}.${y}`;
+}
+
+function getBankCodeFromGroup(group: BankGroup | null): BankCode | null {
+  const normalized = group?.name.toLowerCase().replace(/\s+/g, "") ?? "";
+  if (normalized.includes("mbank")) return "mbank";
+  if (normalized.includes("pekao")) return "pekao";
+  if (normalized.includes("creditagricole") || normalized.includes("agricole") || normalized.includes("ca")) return "credit_agricole";
+  return null;
+}
+
+function formatSyncRange(summary: BankApiSyncSummary): string {
+  if (!summary.fromDate) return `full history to ${summary.toDate}`;
+  return `${summary.fromDate} to ${summary.toDate}`;
+}
+
+function hasEnableBankingAccountId(account: Account | null): boolean {
+  return Boolean(account?.api_account_id?.trim()) || looksLikeUuid(account?.account_number);
+}
+
+function looksLikeUuid(value: string | null | undefined): boolean {
+  return Boolean(
+    value?.trim().match(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    ),
+  );
 }
 
 function shortDate(dateStr: string): string {
@@ -114,11 +140,20 @@ export function Dashboard({
   transactions,
   selectedGroup,
   selectedAccount,
+  onSyncAccount,
   onClearAccount,
   onClearGroup,
 }: DashboardProps) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncSummary, setSyncSummary] = useState<BankApiSyncSummary | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSyncSummary(null);
+    setSyncError(null);
+  }, [selectedAccount?.id]);
 
   async function handleClear() {
     setClearing(true);
@@ -133,6 +168,31 @@ export function Dashboard({
       setConfirmClear(false);
     }
   }
+
+  const bankCode = getBankCodeFromGroup(selectedGroup);
+  const syncDisabledReason = !selectedAccount
+    ? "Select an account first."
+    : !bankCode
+      ? "API sync is unavailable for this bank group."
+      : !hasEnableBankingAccountId(selectedAccount)
+        ? "Set Enable Banking account ID before API sync."
+        : null;
+
+  async function handleApiSync() {
+    if (!selectedAccount || !bankCode || syncDisabledReason) return;
+    setSyncing(true);
+    setSyncError(null);
+    setSyncSummary(null);
+    try {
+      const summary = await onSyncAccount(bankCode, selectedAccount.id);
+      setSyncSummary(summary);
+    } catch (err) {
+      setSyncError((err as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   const income = useMemo(
     () => transactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0),
     [transactions],
@@ -181,57 +241,31 @@ export function Dashboard({
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, paddingTop: 4 }}>
-          {confirmClear ? (
-            <div
-              style={{
-                background: "rgba(255,113,108,0.1)",
-                border: "1px solid rgba(255,113,108,0.4)",
-                borderRadius: "var(--radius)",
-                padding: "12px 16px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                alignItems: "flex-end",
-                maxWidth: 300,
-              }}
-            >
-              <p style={{ fontSize: 13, color: "var(--error)", margin: 0, textAlign: "right" }}>
-                Delete <strong>{transactions.length} transactions</strong> from{" "}
-                <strong>{selectedAccount?.name ?? selectedGroup?.name}</strong>?
-                <br />
-                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                  Bank group and accounts are kept. This cannot be undone.
-                </span>
-              </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setConfirmClear(false)}
-                  disabled={clearing}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-danger"
-                  onClick={() => void handleClear()}
-                  disabled={clearing}
-                >
-                  <span className="icon icon--sm">delete_forever</span>
-                  {clearing ? "Deleting…" : "Yes, wipe it"}
-                </button>
-              </div>
+          {selectedAccount && (
+            <div className="api-sync-control">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => void handleApiSync()}
+                disabled={syncing || Boolean(syncDisabledReason)}
+                title={syncDisabledReason ?? `Sync ${selectedAccount.name} from API`}
+              >
+                <span className="icon icon--sm">{syncing ? "sync" : "cloud_sync"}</span>
+                {syncing ? "Syncing..." : "Sync API"}
+              </button>
+              {syncDisabledReason && <p className="api-sync-note">{syncDisabledReason}</p>}
+              {syncSummary && (
+                <p className="api-sync-note api-sync-note--success">
+                  Imported {syncSummary.importedCount}, skipped {syncSummary.duplicateCount} duplicates.
+                  Range: {formatSyncRange(syncSummary)}.
+                </p>
+              )}
+              {syncError && (
+                <p className="api-sync-note api-sync-note--error">{syncError}</p>
+              )}
             </div>
-          ) : (
-            <button
-              className="btn btn-danger"
-              onClick={() => setConfirmClear(true)}
-              disabled={transactions.length === 0}
-              title={`Wipe all transactions for ${selectedAccount?.name ?? selectedGroup?.name}`}
-            >
-              <span className="icon icon--sm">delete_sweep</span>
-              Wipe transactions
-            </button>
           )}
+
         </div>
       </div>
 
@@ -395,6 +429,46 @@ export function Dashboard({
           >
             Showing 50 of {transactions.length} transactions
           </div>
+        )}
+      </div>
+
+      <div className="dashboard-footer-actions">
+        {confirmClear ? (
+          <div className="wipe-confirm-panel">
+            <p className="wipe-confirm-text">
+              Delete <strong>{transactions.length} transactions</strong> from{" "}
+              <strong>{selectedAccount?.name ?? selectedGroup?.name}</strong>?
+              <br />
+              <span>Bank group and accounts are kept. This cannot be undone.</span>
+            </p>
+            <div className="wipe-confirm-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setConfirmClear(false)}
+                disabled={clearing}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => void handleClear()}
+                disabled={clearing}
+              >
+                <span className="icon icon--sm">delete_forever</span>
+                {clearing ? "Deleting..." : "Yes, wipe it"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="btn btn-danger"
+            onClick={() => setConfirmClear(true)}
+            disabled={transactions.length === 0}
+            title={`Wipe all transactions for ${selectedAccount?.name ?? selectedGroup?.name}`}
+          >
+            <span className="icon icon--sm">delete_sweep</span>
+            Wipe transactions
+          </button>
         )}
       </div>
     </div>

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import type { Account, BankGroup, ImportSummary, Transaction } from "./types";
+import type { Account, BankApiSyncSummary, BankCode, BankGroup, ImportSummary, Transaction } from "./types";
 import { GROUP_COLORS } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { Dashboard } from "./components/Dashboard";
 import { OverviewDashboard } from "./components/OverviewDashboard";
 import { ImportView } from "./components/ImportView";
+import { BudgetView } from "./components/BudgetView";
+import { AdvancedView } from "./components/AdvancedView";
 import {
   getAllTransactions,
   getAccounts,
@@ -12,13 +14,17 @@ import {
   getTransactions,
   createBankGroup,
   updateBankGroup,
+  deleteBankGroup,
   createAccount,
+  updateAccount,
+  deleteAccount,
   importCsv,
   clearAccountTransactions,
   clearGroupTransactions,
+  syncBankApiTransactions,
 } from "./services/database";
 
-export type View = "overview" | "dashboard" | "import";
+export type View = "overview" | "dashboard" | "import" | "budget" | "advanced";
 
 export default function App() {
   const [bankGroups, setBankGroups] = useState<BankGroup[]>([]);
@@ -74,6 +80,47 @@ export default function App() {
     return GROUP_COLORS[existingGroups.length % GROUP_COLORS.length] ?? GROUP_COLORS[0];
   }
 
+  async function handleUpdateGroupName(groupId: number, name: string): Promise<void> {
+    const group = bankGroups.find((g) => g.id === groupId);
+    if (!group) return;
+    const updated = await updateBankGroup(groupId, name, group.color);
+    setBankGroups((prev) => prev.map((g) => (g.id === groupId ? updated : g)));
+  }
+
+  async function handleDeleteGroup(groupId: number): Promise<void> {
+    await deleteBankGroup(groupId);
+    if (selectedGroupId === groupId) {
+      setSelectedGroupId(null);
+      setSelectedAccountId(null);
+      setActiveView("overview");
+    }
+    await loadAll();
+  }
+
+  async function handleUpdateAccount(
+    accountId: number,
+    groupId: number,
+    name: string,
+    apiAccountId: string | null,
+  ): Promise<void> {
+    const account = Object.values(accountsByGroup).flat().find((a) => a.id === accountId);
+    if (!account) return;
+    await updateAccount({ id: accountId, name, accountNumber: account.account_number ?? undefined, apiAccountId: apiAccountId ?? undefined });
+    const updated = await getAccounts(groupId);
+    setAccountsByGroup((prev) => ({ ...prev, [groupId]: updated }));
+  }
+
+  async function handleDeleteAccount(accountId: number, groupId: number): Promise<void> {
+    await deleteAccount(accountId);
+    if (selectedAccountId === accountId) {
+      setSelectedAccountId(null);
+      setActiveView("overview");
+    }
+    const updated = await getAccounts(groupId);
+    setAccountsByGroup((prev) => ({ ...prev, [groupId]: updated }));
+    await refreshAllTransactions();
+  }
+
   async function handleCreateGroup(name: string, color: string): Promise<BankGroup> {
     const group = await createBankGroup(name, color);
     await loadAll();
@@ -91,8 +138,9 @@ export default function App() {
     bankGroupId: number,
     name: string,
     accountNumber?: string,
+    apiAccountId?: string,
   ): Promise<Account> {
-    const account = await createAccount({ bankGroupId, name, accountNumber });
+    const account = await createAccount({ bankGroupId, name, accountNumber, apiAccountId });
     const updated = await getAccounts(bankGroupId);
     setAccountsByGroup((prev) => ({ ...prev, [bankGroupId]: updated }));
     return account;
@@ -100,6 +148,17 @@ export default function App() {
 
   async function handleImport(accountId: number, file: File): Promise<ImportSummary> {
     const summary = await importCsv({ accountId, file });
+    const items = await getTransactions(accountId);
+    setTransactions(items);
+    await refreshAllTransactions();
+    return summary;
+  }
+
+  async function handleSyncAccount(
+    bank: BankCode,
+    accountId: number,
+  ): Promise<BankApiSyncSummary> {
+    const summary = await syncBankApiTransactions({ bank, accountId });
     const items = await getTransactions(accountId);
     setTransactions(items);
     await refreshAllTransactions();
@@ -116,7 +175,8 @@ export default function App() {
   function handleSelectGroup(groupId: number) {
     setSelectedGroupId(groupId);
     setSelectedAccountId(null);
-    setActiveView("dashboard");
+    // Group header only picks context + expands accounts — no account dashboard without an account
+    setActiveView((v) => (v === "dashboard" ? "overview" : v));
     setSidebarOpen(false);
   }
 
@@ -162,6 +222,10 @@ export default function App() {
         onCreateGroup={handleCreateGroup}
         onCreateAccount={handleCreateAccount}
         onUpdateGroupColor={handleUpdateGroupColor}
+        onUpdateGroupName={handleUpdateGroupName}
+        onDeleteGroup={handleDeleteGroup}
+        onUpdateAccount={handleUpdateAccount}
+        onDeleteAccount={handleDeleteAccount}
       />
 
       <div className="main-content">
@@ -182,11 +246,12 @@ export default function App() {
           />
         )}
 
-        {activeView === "dashboard" && (
+        {activeView === "dashboard" && selectedAccountId !== null && selectedAccount && (
           <Dashboard
             transactions={transactions}
             selectedGroup={selectedGroup}
             selectedAccount={selectedAccount}
+            onSyncAccount={handleSyncAccount}
             onClearAccount={handleClearAccount}
             onClearGroup={handleClearGroup}
           />
@@ -202,6 +267,10 @@ export default function App() {
             onCreateAccount={handleCreateAccount}
           />
         )}
+
+        {activeView === "budget" && <BudgetView />}
+
+        {activeView === "advanced" && <AdvancedView />}
       </div>
     </div>
   );

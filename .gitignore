@@ -15,6 +15,7 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+.claude/
 .idea
 .DS_Store
 *.suo
@@ -27,6 +28,9 @@ dist-ssr
 .env
 .env.*
 !.env.example
+.secrets/
+*.pem
+*.key
 
 # ─── SQLite / app database (transactions, private data) ─
 mymoney.db
@@ -46,6 +50,7 @@ backups/
 # ─── Tooling / cache ───────────────────────────────────
 .turbo
 .cache
+.pnpm-store/
 coverage
 *.tsbuildinfo
 
