@@ -28,6 +28,45 @@ export interface Transaction {
   created_at: string;
 }
 
+export interface BudgetCategory {
+  id: number;
+  name: string;
+  color: string;
+  budget_amount: number;
+  created_at: string;
+}
+
+export interface BudgetRule {
+  id: number;
+  match_text: string;
+  category_id: number | null;
+  classification: "expense" | "transfer";
+  created_at: string;
+}
+
+export interface BudgetMonth {
+  id: number;
+  year_month: string;
+  created_at: string;
+}
+
+export interface BudgetMonthItem extends Transaction {
+  budget_item_id: number;
+  budget_month_id: number;
+  transaction_id: number;
+  budget_category_id: number | null;
+  classification: "expense" | "transfer";
+  assignment_source: "unassigned" | "rule" | "manual";
+  rule_id: number | null;
+  budget_category_name: string | null;
+  budget_category_color: string | null;
+}
+
+export interface BudgetMonthData {
+  month: BudgetMonth;
+  items: BudgetMonthItem[];
+}
+
 export interface ImportSummary {
   detectedFormat: string;
   parsedCount: number;

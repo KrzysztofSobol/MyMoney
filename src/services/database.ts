@@ -3,6 +3,9 @@ import type {
   BankApiSyncSummary,
   BankCode,
   BankGroup,
+  BudgetCategory,
+  BudgetMonthData,
+  BudgetRule,
   ImportSummary,
   Transaction,
 } from "../types";
@@ -102,6 +105,77 @@ export async function getTransactions(accountId: number): Promise<Transaction[]>
 export async function getAllTransactions(): Promise<Transaction[]> {
   const response = await fetch("/api/transactions/all");
   return handleResponse<Transaction[]>(response);
+}
+
+export async function getBudgetCategories(): Promise<BudgetCategory[]> {
+  const response = await fetch("/api/budget/categories");
+  return handleResponse<BudgetCategory[]>(response);
+}
+
+export async function createBudgetCategory(payload: {
+  name: string;
+  color: string;
+  budgetAmount: number;
+}): Promise<BudgetCategory> {
+  const response = await fetch("/api/budget/categories", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<BudgetCategory>(response);
+}
+
+export async function deleteBudgetCategory(id: number): Promise<void> {
+  const response = await fetch(`/api/budget/categories/${id}`, { method: "DELETE" });
+  if (!response.ok) throw new Error((await response.text()) || "Failed to delete budget category");
+}
+
+export async function getBudgetRules(): Promise<BudgetRule[]> {
+  const response = await fetch("/api/budget/rules");
+  return handleResponse<BudgetRule[]>(response);
+}
+
+export async function createBudgetRule(payload: {
+  matchText: string;
+  categoryId: number | null;
+  classification: "expense" | "transfer";
+}): Promise<BudgetRule> {
+  const response = await fetch("/api/budget/rules", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<BudgetRule>(response);
+}
+
+export async function deleteBudgetRule(id: number): Promise<void> {
+  const response = await fetch(`/api/budget/rules/${id}`, { method: "DELETE" });
+  if (!response.ok) throw new Error((await response.text()) || "Failed to delete budget rule");
+}
+
+export async function getBudgetMonth(yearMonth: string): Promise<BudgetMonthData> {
+  const response = await fetch(`/api/budget/months/${yearMonth}`);
+  return handleResponse<BudgetMonthData>(response);
+}
+
+export async function assignBudgetTransaction(payload: {
+  yearMonth: string;
+  transactionId: number;
+  categoryId: number | null;
+  classification: "expense" | "transfer";
+}): Promise<BudgetMonthData> {
+  const response = await fetch(
+    `/api/budget/months/${payload.yearMonth}/transactions/${payload.transactionId}`,
+    {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        categoryId: payload.categoryId,
+        classification: payload.classification,
+      }),
+    },
+  );
+  return handleResponse<BudgetMonthData>(response);
 }
 
 export async function importCsv(payload: {

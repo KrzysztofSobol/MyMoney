@@ -8,6 +8,7 @@ const MBANK_LIST_HEADER =
 const MBANK_STMT_HEADER =
   "#Data księgowania;#Data operacji;#Opis operacji;#Tytuł;#Nadawca/Odbiorca;#Numer konta;#Kwota;#Saldo po operacji";
 const PEKAO_HEADER_PREFIX = "Data księgowania;Data waluty;";
+const ING_HEADER_PREFIX = '"Data transakcji";"Data księgowania";';
 
 function stripTrailingSemicolons(line: string): string {
   return line.replace(/;+$/, "");
@@ -83,7 +84,7 @@ function assignUniqueHashes(transactions: ParsedTransaction[]): void {
   }
 }
 
-type Format = "mbank-list" | "mbank-stmt" | "pekao";
+type Format = "mbank-list" | "mbank-stmt" | "pekao" | "ing";
 
 function detectFormat(decoded: string): Format {
   for (const line of decoded.split(/\r?\n/)) {
@@ -92,7 +93,8 @@ function detectFormat(decoded: string): Format {
     if (stripped === MBANK_STMT_HEADER) return "mbank-stmt";
   }
   if (decoded.includes(PEKAO_HEADER_PREFIX)) return "pekao";
-  throw new Error("Unsupported CSV format. Expected mBank or Pekao export.");
+  if (decoded.includes(ING_HEADER_PREFIX)) return "ing";
+  throw new Error("Unsupported CSV format. Expected mBank, Pekao or ING export.");
 }
 
 // ─── mBank "Lista operacji" format ──────────────────────
@@ -222,9 +224,9 @@ function parsePekao(decoded: string): ParsedTransaction[] {
     const transactionDateRaw = row["Data księgowania"]?.trim();
     const postingDateRaw = row["Data waluty"]?.trim();
     const amountRaw = row["Kwota operacji"]?.trim();
-    const descriptionRaw = row["Tytułem"]?.trim();
+    const descriptionRaw = row["Tytułem"]?.trim() ?? "";
 
-    if (!transactionDateRaw || !amountRaw || !descriptionRaw) continue;
+    if (!transactionDateRaw || !amountRaw) continue;
 
     const transactionDate = normalizeDate(transactionDateRaw);
     const postingDate = postingDateRaw ? normalizeDate(postingDateRaw) : null;
@@ -233,19 +235,91 @@ function parsePekao(decoded: string): ParsedTransaction[] {
     const category = row["Kategoria"]?.trim() || null;
     const counterparty = row["Nadawca / Odbiorca"]?.trim() || null;
     const referenceNumber = row["Numer referencyjny"]?.trim() || undefined;
+    const operationType = row["Typ operacji"]?.trim() || "";
+    const description =
+      descriptionRaw ||
+      counterparty ||
+      operationType ||
+      category ||
+      referenceNumber ||
+      "Pekao transaction";
 
     transactions.push({
       transactionDate,
       postingDate,
       amount,
       currency,
-      description: descriptionRaw,
+      description,
       category,
       counterparty,
       csvHash: makeBaseHash(
         transactionDate,
         amount,
-        descriptionRaw,
+        description,
+        referenceNumber,
+      ),
+    });
+  }
+
+  assignUniqueHashes(transactions);
+  return transactions;
+}
+
+// ─── ING format ──────────────────────────────────────────
+function stripIngExcelPrefix(value: string): string {
+  return value.trim().replace(/^'(.+)'$/, "$1").trim();
+}
+
+function parseIng(decoded: string): ParsedTransaction[] {
+  const lines = decoded.split(/\r?\n/);
+  const headerIndex = lines.findIndex((line) => line.includes(ING_HEADER_PREFIX));
+  if (headerIndex < 0) throw new Error("ING transaction header not found.");
+
+  const records = parse(lines.slice(headerIndex + 1).join("\n"), {
+    delimiter: ";",
+    relax_column_count: true,
+    skip_empty_lines: true,
+    quote: '"',
+    relax_quotes: true,
+  }) as string[][];
+
+  const transactions: ParsedTransaction[] = [];
+  for (const row of records) {
+    const transactionDateRaw = row[0]?.trim();
+    const postingDateRaw = row[1]?.trim();
+    const counterpartyRaw = row[2]?.trim() ?? "";
+    const titleRaw = row[3]?.trim() ?? "";
+    const detailsRaw = row[6]?.trim() ?? "";
+    const referenceNumber = stripIngExcelPrefix(row[7] ?? "") || undefined;
+    const amountRaw = row[8]?.trim();
+    const currency = row[9]?.trim() || "PLN";
+
+    if (!transactionDateRaw || !amountRaw) continue;
+
+    const transactionDate = normalizeDate(transactionDateRaw);
+    const postingDate = postingDateRaw ? normalizeDate(postingDateRaw) : null;
+    const amount = normalizeAmount(amountRaw);
+    const title = stripIngExcelPrefix(titleRaw);
+    const details = stripIngExcelPrefix(detailsRaw);
+    const counterparty = stripIngExcelPrefix(counterpartyRaw) || null;
+    const description =
+      [title, details].filter(Boolean).join(" — ") ||
+      counterparty ||
+      referenceNumber ||
+      "ING transaction";
+
+    transactions.push({
+      transactionDate,
+      postingDate,
+      amount,
+      currency,
+      description,
+      category: null,
+      counterparty,
+      csvHash: makeBaseHash(
+        transactionDate,
+        amount,
+        [description, counterparty ?? ""].filter(Boolean).join(" "),
         referenceNumber,
       ),
     });
@@ -273,5 +347,7 @@ export function parseCsvFile(buffer: Buffer): {
       };
     case "pekao":
       return { detectedFormat: "Pekao", transactions: parsePekao(decoded) };
+    case "ing":
+      return { detectedFormat: "ING", transactions: parseIng(decoded) };
   }
 }

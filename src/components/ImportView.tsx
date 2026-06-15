@@ -128,7 +128,7 @@ export function ImportView({
       <div className="page-header">
         <p className="page-header-label">Import</p>
         <h2 className="page-header-title">Import CSV</h2>
-        <p className="page-header-sub">Supports mBank and Pekao formats — duplicates are skipped automatically.</p>
+        <p className="page-header-sub">Supports mBank, Pekao and ING formats — duplicates are skipped automatically.</p>
       </div>
 
       <div className="step-indicator">
@@ -194,7 +194,7 @@ export function ImportView({
                   className="input"
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
-                  placeholder="e.g. mBank, Pekao, PKO"
+                  placeholder="e.g. mBank, Pekao, ING"
                   autoFocus
                 />
                 <div className="color-swatches" style={{ marginTop: 6 }}>
@@ -358,7 +358,7 @@ export function ImportView({
               <p>
                 Drop CSV here or <strong>browse</strong>
               </p>
-              <small>mBank and Pekao formats supported</small>
+              <small>mBank, Pekao and ING formats supported</small>
             </>
           )}
           <input

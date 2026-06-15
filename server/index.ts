@@ -5,8 +5,12 @@ import multer from "multer";
 import {
   clearAccountTransactions,
   clearGroupTransactions,
+  createBudgetCategory,
+  createBudgetRule,
   createAccount,
   createBankGroup,
+  deleteBudgetCategory,
+  deleteBudgetRule,
   deleteAccount,
   deleteBankGroup,
   deleteTransaction,
@@ -14,8 +18,12 @@ import {
   getBankSyncCalls,
   getAllTransactions,
   getBankGroups,
+  getBudgetCategories,
+  getBudgetMonth,
+  getBudgetRules,
   getTransactions,
   insertTransactionsWithDedup,
+  assignBudgetTransaction,
   updateAccount,
   updateBankGroup,
   updateTransactionCategory,
@@ -163,6 +171,93 @@ app.get("/api/transactions", (req, res) => {
     return;
   }
   res.json(getTransactions(accountId));
+});
+
+function isYearMonth(value: string): boolean {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+}
+
+app.get("/api/budget/categories", (_req, res) => {
+  res.json(getBudgetCategories());
+});
+
+app.post("/api/budget/categories", (req, res) => {
+  const name = String(req.body?.name ?? "").trim();
+  const color = String(req.body?.color ?? "#69daff").trim();
+  const budgetAmount = Number(req.body?.budgetAmount);
+  if (!name || !Number.isFinite(budgetAmount) || budgetAmount <= 0) {
+    res.status(400).send("name and positive budgetAmount are required.");
+    return;
+  }
+  res.status(201).json(createBudgetCategory(name, color, budgetAmount));
+});
+
+app.delete("/api/budget/categories/:id", (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) {
+    res.status(400).send("id is required.");
+    return;
+  }
+  deleteBudgetCategory(id);
+  res.status(204).send();
+});
+
+app.get("/api/budget/rules", (_req, res) => {
+  res.json(getBudgetRules());
+});
+
+app.post("/api/budget/rules", (req, res) => {
+  const matchText = String(req.body?.matchText ?? "").trim();
+  const classification = req.body?.classification === "transfer" ? "transfer" : "expense";
+  const categoryId = req.body?.categoryId ? Number(req.body.categoryId) : null;
+  if (!matchText) {
+    res.status(400).send("matchText is required.");
+    return;
+  }
+  if (classification === "expense" && !categoryId) {
+    res.status(400).send("categoryId is required for expense rules.");
+    return;
+  }
+  res.status(201).json(createBudgetRule({ matchText, categoryId, classification }));
+});
+
+app.delete("/api/budget/rules/:id", (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) {
+    res.status(400).send("id is required.");
+    return;
+  }
+  deleteBudgetRule(id);
+  res.status(204).send();
+});
+
+app.get("/api/budget/months/:yearMonth", (req, res) => {
+  const yearMonth = String(req.params.yearMonth ?? "").trim();
+  if (!isYearMonth(yearMonth)) {
+    res.status(400).send("yearMonth must be YYYY-MM.");
+    return;
+  }
+  res.json(getBudgetMonth(yearMonth));
+});
+
+app.put("/api/budget/months/:yearMonth/transactions/:transactionId", (req, res) => {
+  const yearMonth = String(req.params.yearMonth ?? "").trim();
+  const transactionId = Number(req.params.transactionId);
+  const classification = req.body?.classification === "transfer" ? "transfer" : "expense";
+  const categoryId = req.body?.categoryId ? Number(req.body.categoryId) : null;
+  if (!isYearMonth(yearMonth) || !transactionId) {
+    res.status(400).send("yearMonth and transactionId are required.");
+    return;
+  }
+  if (classification === "expense" && !categoryId) {
+    res.status(400).send("categoryId is required for expense assignment.");
+    return;
+  }
+  try {
+    res.json(assignBudgetTransaction({ yearMonth, transactionId, categoryId, classification }));
+  } catch (error) {
+    res.status(400).send((error as Error).message);
+  }
 });
 
 app.patch("/api/transactions/:id", (req, res) => {

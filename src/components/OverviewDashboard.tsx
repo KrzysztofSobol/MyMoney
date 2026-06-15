@@ -36,12 +36,30 @@ interface OverviewDashboardProps {
   allTransactions: Transaction[];
 }
 
+const MONEY_EPSILON = 0.005;
+
+function roundMoney(n: number): number {
+  const rounded = Number(n.toFixed(2));
+  return Math.abs(rounded) < MONEY_EPSILON ? 0 : rounded;
+}
+
+function hasNonZeroBalance(n: number): boolean {
+  return roundMoney(n) !== 0;
+}
+
+function visibleChartBalance(balance: number, wasPositive: boolean): number | null {
+  const rounded = roundMoney(balance);
+  if (rounded > 0) return rounded;
+  if (wasPositive) return 0;
+  return null;
+}
+
 function formatPLN(n: number): string {
   return new Intl.NumberFormat("pl-PL", {
     style: "currency",
     currency: "PLN",
     minimumFractionDigits: 2,
-  }).format(n);
+  }).format(roundMoney(n));
 }
 
 function formatDateFull(dateStr: string): string {
@@ -177,23 +195,19 @@ export function OverviewDashboard({
       const txs = allTransactions.filter((t) => ids.has(t.account_id));
       const inc = txs.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
       const exp = txs.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0);
-      return { group, income: inc, expenses: exp, net: inc + exp, count: txs.length };
+      return { group, income: inc, expenses: exp, net: roundMoney(inc + exp), count: txs.length };
     });
   }, [bankGroups, accountsByGroup, allTransactions]);
+
+  const visibleGroupStats = useMemo(
+    () => groupStats.filter(({ net }) => hasNonZeroBalance(net)),
+    [groupStats],
+  );
 
   // Cumulative balance chart
   const { chartData, rangeLabel, totalDays } = useMemo(() => {
     if (bankGroups.length === 0 || allTransactions.length === 0) {
       return { chartData: [], rangeLabel: "", totalDays: 0 };
-    }
-
-    // First transaction date per group
-    const firstTxByGroup = new Map<number, string>();
-    for (const tx of allTransactions) {
-      const group = accountToGroup.get(tx.account_id);
-      if (!group) continue;
-      const prev = firstTxByGroup.get(group.id);
-      if (!prev || tx.transaction_date < prev) firstTxByGroup.set(group.id, tx.transaction_date);
     }
 
     // Pre-process daily net per group
@@ -235,23 +249,41 @@ export function OverviewDashboard({
 
     // Build daily points
     const running = new Map<number, number>(initBal);
+    const activeByGroup = new Map<number, boolean>();
+    for (const group of bankGroups) {
+      activeByGroup.set(group.id, roundMoney(initBal.get(group.id) ?? 0) > 0);
+    }
+    let totalWasPositive =
+      roundMoney([...initBal.values()].reduce((sum, amount) => sum + amount, 0)) > 0;
     const rawData: Record<string, number | string | null>[] = [];
 
-    // Anchor point: one day before startDate for groups already active before window
+    // Anchor point: one day before startDate for balances already positive before window.
     const anchorD = new Date(parseLocalYMD(startDate));
     anchorD.setDate(anchorD.getDate() - 1);
     const anchorEntry: Record<string, number | string | null> = { date: toLocalYMD(anchorD) };
+    const startDayMap = byDateGroup.get(startDate);
     let hasAnchor = false;
     for (const group of bankGroups) {
-      const firstDate = firstTxByGroup.get(group.id);
-      if (firstDate && firstDate <= startDate) {
+      const initial = roundMoney(initBal.get(group.id) ?? 0);
+      const startsPositive =
+        initial <= 0 && roundMoney(initial + (startDayMap?.get(group.id) ?? 0)) > 0;
+      if (initial > 0) {
+        anchorEntry[`g_${group.id}`] = initial;
+        hasAnchor = true;
+      } else if (startsPositive) {
         anchorEntry[`g_${group.id}`] = 0;
         hasAnchor = true;
       } else {
         anchorEntry[`g_${group.id}`] = null;
       }
     }
-    anchorEntry.total = null;
+    const initialTotal = roundMoney([...initBal.values()].reduce((sum, amount) => sum + amount, 0));
+    const startDayTotal = roundMoney(
+      [...(startDayMap?.values() ?? [])].reduce((sum, amount) => sum + amount, 0),
+    );
+    const totalStartsPositive = initialTotal <= 0 && roundMoney(initialTotal + startDayTotal) > 0;
+    anchorEntry.total = initialTotal > 0 ? initialTotal : totalStartsPositive ? 0 : null;
+    hasAnchor ||= initialTotal > 0 || totalStartsPositive;
     if (hasAnchor) rawData.push(anchorEntry);
 
     let cur = parseLocalYMD(startDate);
@@ -268,21 +300,24 @@ export function OverviewDashboard({
       const entry: Record<string, number | string | null> = { date: dateStr };
       let total = 0;
       for (const group of bankGroups) {
-        const val = Number((running.get(group.id) ?? 0).toFixed(2));
-        const firstDate = firstTxByGroup.get(group.id);
-        if (!firstDate) {
-          entry[`g_${group.id}`] = null;
-        } else if (dateStr >= firstDate) {
-          entry[`g_${group.id}`] = val;
-        } else {
-          // day before firstDate: anchor at 0 so line lifts off from ground
-          const nextDay = new Date(cur);
-          nextDay.setDate(nextDay.getDate() + 1);
-          entry[`g_${group.id}`] = toLocalYMD(nextDay) === firstDate ? 0 : null;
+        const key = `g_${group.id}`;
+        const val = roundMoney(running.get(group.id) ?? 0);
+        const wasPositive = activeByGroup.get(group.id) ?? false;
+        if (val > 0 && !wasPositive) {
+          const previous = rawData[rawData.length - 1];
+          if (previous && previous[key] == null) previous[key] = 0;
         }
+        entry[key] = visibleChartBalance(val, wasPositive);
+        activeByGroup.set(group.id, val > 0);
         total += val;
       }
-      entry.total = Number(total.toFixed(2));
+      const roundedTotal = roundMoney(total);
+      if (roundedTotal > 0 && !totalWasPositive) {
+        const previous = rawData[rawData.length - 1];
+        if (previous && previous.total == null) previous.total = 0;
+      }
+      entry.total = visibleChartBalance(roundedTotal, totalWasPositive);
+      totalWasPositive = roundedTotal > 0;
       rawData.push(entry);
       cur.setDate(cur.getDate() + 1);
     }
@@ -292,7 +327,27 @@ export function OverviewDashboard({
     let data = rawData;
     if (rawData.length > maxPts) {
       const step = Math.ceil(rawData.length / maxPts);
-      data = rawData.filter((_, i) => i % step === 0);
+      const chartKeys = ["total", ...bankGroups.map((group) => `g_${group.id}`)];
+      const isImportantPoint = (index: number) => {
+        const current = rawData[index];
+        const previous = rawData[index - 1];
+        const next = rawData[index + 1];
+        if (!current || index === 0 || index === rawData.length - 1) return true;
+
+        return chartKeys.some((key) => {
+          const curValue = current[key];
+          if (typeof curValue !== "number") return false;
+          const prevValue = previous?.[key];
+          const nextValue = next?.[key];
+          return (
+            typeof prevValue !== "number" ||
+            typeof nextValue !== "number" ||
+            (curValue === 0 && typeof prevValue === "number" && prevValue > 0)
+          );
+        });
+      };
+
+      data = rawData.filter((_, i) => i % step === 0 || isImportantPoint(i));
       const lastRaw = rawData[rawData.length - 1];
       const lastKept = data[data.length - 1];
       if (lastRaw && lastKept && lastRaw.date !== lastKept.date) {
@@ -323,6 +378,15 @@ export function OverviewDashboard({
   const formatXTooltip = (dateStr: string) => formatDateFull(dateStr);
 
   const hasAnyData = allTransactions.length > 0;
+  const visibleChartGroups = useMemo(
+    () =>
+      bankGroups.filter((group) =>
+        chartData.some((entry) => typeof entry[`g_${group.id}`] === "number"),
+      ),
+    [bankGroups, chartData],
+  );
+  const hasVisibleTotal = chartData.some((entry) => typeof entry.total === "number");
+  const hasVisibleChartData = hasVisibleTotal || visibleChartGroups.length > 0;
 
   if (bankGroups.length === 0) {
     return (
@@ -388,11 +452,13 @@ export function OverviewDashboard({
 
         {/* Legend */}
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
-            <span style={{ width: 24, height: 2.5, borderRadius: 2, background: "rgba(255,255,255,0.7)", display: "inline-block" }} />
-            Total
-          </span>
-          {bankGroups.map((g) => (
+          {hasVisibleTotal && (
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
+              <span style={{ width: 24, height: 2.5, borderRadius: 2, background: "rgba(255,255,255,0.7)", display: "inline-block" }} />
+              Total
+            </span>
+          )}
+          {visibleChartGroups.map((g) => (
             <span key={g.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-dim)" }}>
               <span style={{ width: 20, height: 2, borderRadius: 2, background: g.color, display: "inline-block" }} />
               {g.name}
@@ -403,6 +469,10 @@ export function OverviewDashboard({
         {!hasAnyData ? (
           <div style={{ height: 360, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 13 }}>
             Import CSV files to populate the chart
+          </div>
+        ) : !hasVisibleChartData ? (
+          <div style={{ height: 360, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 13 }}>
+            No positive balances in this range
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={360}>
@@ -434,19 +504,21 @@ export function OverviewDashboard({
               />
               <ReferenceLine y={0} stroke="var(--border-strong)" strokeWidth={1} />
               {/* Total line — thick white */}
-              <Line
-                type="monotone"
-                dataKey="total"
-                name="Total"
-                stroke="rgba(255,255,255,0.75)"
-                strokeWidth={2.5}
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-                activeDot={{ r: 5, fill: "white", strokeWidth: 0 }}
-              />
+              {hasVisibleTotal && (
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  name="Total"
+                  stroke="rgba(255,255,255,0.75)"
+                  strokeWidth={2.5}
+                  dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  activeDot={{ r: 5, fill: "white", strokeWidth: 0 }}
+                />
+              )}
               {/* Per-group lines */}
-              {bankGroups.map((group) => (
+              {visibleChartGroups.map((group) => (
                 <Line
                   key={group.id}
                   type="monotone"
@@ -466,16 +538,16 @@ export function OverviewDashboard({
       </div>
 
       {/* Per-group cards — below the chart */}
-      {groupStats.length > 0 && (
+      {visibleGroupStats.length > 0 && (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${Math.min(groupStats.length, 4)}, 1fr)`,
+            gridTemplateColumns: `repeat(${Math.min(visibleGroupStats.length, 4)}, 1fr)`,
             gap: 12,
             marginBottom: 20,
           }}
         >
-          {groupStats.map(({ group, income: gInc, expenses: gExp, net: gNet, count }) => (
+          {visibleGroupStats.map(({ group, income: gInc, expenses: gExp, net: gNet, count }) => (
             <div
               key={group.id}
               className="stat-card"

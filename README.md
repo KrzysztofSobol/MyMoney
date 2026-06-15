@@ -5,7 +5,7 @@ A **local personal budgeting app**: bank groups, accounts, and transactions in a
 ## Features
 
 - **Groups & accounts** — custom names, group colors, optional account number
-- **CSV import** — format detection (mBank list / statement, Pekao), hash-based deduplication
+- **CSV import** — format detection (mBank list / statement, Pekao, ING), hash-based deduplication
 - **Account dashboard** — income, expenses, balance, transaction list
 - **Overview** — aggregate stats, cumulative balance chart
 
