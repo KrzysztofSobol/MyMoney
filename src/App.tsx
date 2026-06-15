@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import type { Account, BankApiSyncSummary, BankCode, BankGroup, ImportSummary, Transaction } from "./types";
+import type { Account, BankGroup, ImportSummary, Transaction } from "./types";
 import { GROUP_COLORS } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { Dashboard } from "./components/Dashboard";
 import { OverviewDashboard } from "./components/OverviewDashboard";
 import { ImportView } from "./components/ImportView";
 import { BudgetView } from "./components/BudgetView";
-import { AdvancedView } from "./components/AdvancedView";
 import {
   getAllTransactions,
   getAccounts,
@@ -21,10 +20,9 @@ import {
   importCsv,
   clearAccountTransactions,
   clearGroupTransactions,
-  syncBankApiTransactions,
 } from "./services/database";
 
-export type View = "overview" | "dashboard" | "import" | "budget" | "advanced";
+export type View = "overview" | "dashboard" | "import" | "budget";
 
 export default function App() {
   const [bankGroups, setBankGroups] = useState<BankGroup[]>([]);
@@ -101,11 +99,10 @@ export default function App() {
     accountId: number,
     groupId: number,
     name: string,
-    apiAccountId: string | null,
   ): Promise<void> {
     const account = Object.values(accountsByGroup).flat().find((a) => a.id === accountId);
     if (!account) return;
-    await updateAccount({ id: accountId, name, accountNumber: account.account_number ?? undefined, apiAccountId: apiAccountId ?? undefined });
+    await updateAccount({ id: accountId, name, accountNumber: account.account_number ?? undefined });
     const updated = await getAccounts(groupId);
     setAccountsByGroup((prev) => ({ ...prev, [groupId]: updated }));
   }
@@ -138,9 +135,8 @@ export default function App() {
     bankGroupId: number,
     name: string,
     accountNumber?: string,
-    apiAccountId?: string,
   ): Promise<Account> {
-    const account = await createAccount({ bankGroupId, name, accountNumber, apiAccountId });
+    const account = await createAccount({ bankGroupId, name, accountNumber });
     const updated = await getAccounts(bankGroupId);
     setAccountsByGroup((prev) => ({ ...prev, [bankGroupId]: updated }));
     return account;
@@ -148,17 +144,6 @@ export default function App() {
 
   async function handleImport(accountId: number, file: File): Promise<ImportSummary> {
     const summary = await importCsv({ accountId, file });
-    const items = await getTransactions(accountId);
-    setTransactions(items);
-    await refreshAllTransactions();
-    return summary;
-  }
-
-  async function handleSyncAccount(
-    bank: BankCode,
-    accountId: number,
-  ): Promise<BankApiSyncSummary> {
-    const summary = await syncBankApiTransactions({ bank, accountId });
     const items = await getTransactions(accountId);
     setTransactions(items);
     await refreshAllTransactions();
@@ -251,7 +236,6 @@ export default function App() {
             transactions={transactions}
             selectedGroup={selectedGroup}
             selectedAccount={selectedAccount}
-            onSyncAccount={handleSyncAccount}
             onClearAccount={handleClearAccount}
             onClearGroup={handleClearGroup}
           />
@@ -269,8 +253,6 @@ export default function App() {
         )}
 
         {activeView === "budget" && <BudgetView />}
-
-        {activeView === "advanced" && <AdvancedView />}
       </div>
     </div>
   );

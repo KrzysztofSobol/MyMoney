@@ -19,7 +19,7 @@ interface SidebarProps {
   onUpdateGroupColor: (groupId: number, color: string) => Promise<void>;
   onUpdateGroupName: (groupId: number, name: string) => Promise<void>;
   onDeleteGroup: (groupId: number) => Promise<void>;
-  onUpdateAccount: (accountId: number, groupId: number, name: string, apiAccountId: string | null) => Promise<void>;
+  onUpdateAccount: (accountId: number, groupId: number, name: string) => Promise<void>;
   onDeleteAccount: (accountId: number, groupId: number) => Promise<void>;
 }
 
@@ -68,10 +68,9 @@ export function Sidebar({
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [deleteGroupError, setDeleteGroupError] = useState<string | null>(null);
 
-  // Edit account (name + api id)
+  // Edit account
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
   const [editAccountName, setEditAccountName] = useState("");
-  const [editAccountApiId, setEditAccountApiId] = useState("");
   const [editAccountGroupId, setEditAccountGroupId] = useState<number | null>(null);
   const [editAccountError, setEditAccountError] = useState<string | null>(null);
 
@@ -131,7 +130,6 @@ export function Sidebar({
     setEditingAccountId(account.id);
     setEditAccountGroupId(groupId);
     setEditAccountName(account.name);
-    setEditAccountApiId(account.api_account_id ?? "");
     setEditAccountError(null);
     setConfirmDeleteAccountId(null);
   }
@@ -197,12 +195,7 @@ export function Sidebar({
     if (!name || editingAccountId === null || editAccountGroupId === null) return;
     setEditAccountError(null);
     try {
-      await onUpdateAccount(
-        editingAccountId,
-        editAccountGroupId,
-        name,
-        editAccountApiId.trim() || null,
-      );
+      await onUpdateAccount(editingAccountId, editAccountGroupId, name);
       setEditingAccountId(null);
     } catch (err) {
       setEditAccountError((err as Error).message);
@@ -252,13 +245,6 @@ export function Sidebar({
         >
           <span className="icon icon--sm">account_balance_wallet</span>
           Budget
-        </button>
-        <button
-          className={`sidebar-nav-link${activeView === "advanced" ? " sidebar-nav-link--active" : ""}`}
-          onClick={() => onNavigate("advanced")}
-        >
-          <span className="icon icon--sm">settings</span>
-          Advanced
         </button>
       </nav>
 
@@ -479,14 +465,6 @@ export function Sidebar({
                               }
                             />
                             <span className="sidebar-account-name">{account.name}</span>
-                            {!account.api_account_id && (
-                              <span
-                                className="sidebar-account-no-api"
-                                title="Enable Banking ID not set"
-                              >
-                                <span className="icon icon--sm">link_off</span>
-                              </span>
-                            )}
                           </button>
                           <button
                             type="button"
@@ -534,17 +512,6 @@ export function Sidebar({
                                 onChange={(e) => setEditAccountName(e.target.value)}
                                 placeholder="Account name"
                                 maxLength={60}
-                              />
-                            </div>
-                            <label className="sidebar-edit-label">
-                              Enable Banking ID
-                              <span className="sidebar-edit-label-hint"> (api_account_id)</span>
-                            </label>
-                            <div className="sidebar-inline-form" style={{ padding: 0, marginBottom: 8 }}>
-                              <input
-                                value={editAccountApiId}
-                                onChange={(e) => setEditAccountApiId(e.target.value)}
-                                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                               />
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>

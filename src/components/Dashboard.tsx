@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -10,13 +10,12 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import type { Account, BankApiSyncSummary, BankCode, BankGroup, Transaction } from "../types";
+import type { Account, BankGroup, Transaction } from "../types";
 
 interface DashboardProps {
   transactions: Transaction[];
   selectedGroup: BankGroup | null;
   selectedAccount: Account | null;
-  onSyncAccount: (bank: BankCode, accountId: number) => Promise<BankApiSyncSummary>;
   onClearAccount: (accountId: number) => Promise<void>;
   onClearGroup: (groupId: number) => Promise<void>;
 }
@@ -32,31 +31,6 @@ function formatPLN(n: number): string {
 function formatDate(dateStr: string): string {
   const [y, m, d] = dateStr.split("-");
   return `${d}.${m}.${y}`;
-}
-
-function getBankCodeFromGroup(group: BankGroup | null): BankCode | null {
-  const normalized = group?.name.toLowerCase().replace(/\s+/g, "") ?? "";
-  if (normalized.includes("mbank")) return "mbank";
-  if (normalized.includes("pekao")) return "pekao";
-  if (normalized.includes("creditagricole") || normalized.includes("agricole") || normalized.includes("ca")) return "credit_agricole";
-  return null;
-}
-
-function formatSyncRange(summary: BankApiSyncSummary): string {
-  if (!summary.fromDate) return `full history to ${summary.toDate}`;
-  return `${summary.fromDate} to ${summary.toDate}`;
-}
-
-function hasEnableBankingAccountId(account: Account | null): boolean {
-  return Boolean(account?.api_account_id?.trim()) || looksLikeUuid(account?.account_number);
-}
-
-function looksLikeUuid(value: string | null | undefined): boolean {
-  return Boolean(
-    value?.trim().match(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    ),
-  );
 }
 
 function shortDate(dateStr: string): string {
@@ -140,20 +114,11 @@ export function Dashboard({
   transactions,
   selectedGroup,
   selectedAccount,
-  onSyncAccount,
   onClearAccount,
   onClearGroup,
 }: DashboardProps) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncSummary, setSyncSummary] = useState<BankApiSyncSummary | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setSyncSummary(null);
-    setSyncError(null);
-  }, [selectedAccount?.id]);
 
   async function handleClear() {
     setClearing(true);
@@ -166,30 +131,6 @@ export function Dashboard({
     } finally {
       setClearing(false);
       setConfirmClear(false);
-    }
-  }
-
-  const bankCode = getBankCodeFromGroup(selectedGroup);
-  const syncDisabledReason = !selectedAccount
-    ? "Select an account first."
-    : !bankCode
-      ? "API sync is unavailable for this bank group."
-      : !hasEnableBankingAccountId(selectedAccount)
-        ? "Set Enable Banking account ID before API sync."
-        : null;
-
-  async function handleApiSync() {
-    if (!selectedAccount || !bankCode || syncDisabledReason) return;
-    setSyncing(true);
-    setSyncError(null);
-    setSyncSummary(null);
-    try {
-      const summary = await onSyncAccount(bankCode, selectedAccount.id);
-      setSyncSummary(summary);
-    } catch (err) {
-      setSyncError((err as Error).message);
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -231,41 +172,10 @@ export function Dashboard({
 
   return (
     <div>
-      <div
-        className="page-header"
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}
-      >
+      <div className="page-header">
         <div>
           <p className="page-header-label">{subtitle ?? "Overview"}</p>
           <h2 className="page-header-title">{title ?? "Dashboard"}</h2>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, paddingTop: 4 }}>
-          {selectedAccount && (
-            <div className="api-sync-control">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => void handleApiSync()}
-                disabled={syncing || Boolean(syncDisabledReason)}
-                title={syncDisabledReason ?? `Sync ${selectedAccount.name} from API`}
-              >
-                <span className="icon icon--sm">{syncing ? "sync" : "cloud_sync"}</span>
-                {syncing ? "Syncing..." : "Sync API"}
-              </button>
-              {syncDisabledReason && <p className="api-sync-note">{syncDisabledReason}</p>}
-              {syncSummary && (
-                <p className="api-sync-note api-sync-note--success">
-                  Imported {syncSummary.importedCount}, skipped {syncSummary.duplicateCount} duplicates.
-                  Range: {formatSyncRange(syncSummary)}.
-                </p>
-              )}
-              {syncError && (
-                <p className="api-sync-note api-sync-note--error">{syncError}</p>
-              )}
-            </div>
-          )}
-
         </div>
       </div>
 

@@ -12,7 +12,6 @@ interface ImportViewProps {
     groupId: number,
     name: string,
     accountNumber?: string,
-    apiAccountId?: string,
   ) => Promise<Account>;
 }
 
@@ -40,7 +39,6 @@ export function ImportView({
   const [showNewAccount, setShowNewAccount] = useState(false);
   const [newAccountName, setNewAccountName] = useState("");
   const [newAccountNumber, setNewAccountNumber] = useState("");
-  const [newApiAccountId, setNewApiAccountId] = useState("");
   const [accountError, setAccountError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,12 +73,10 @@ export function ImportView({
         selectedGroupId,
         name,
         newAccountNumber.trim() || undefined,
-        newApiAccountId.trim() || undefined,
       );
       setSelectedAccountId(account.id);
       setNewAccountName("");
       setNewAccountNumber("");
-      setNewApiAccountId("");
       setShowNewAccount(false);
     } catch (err) {
       setAccountError((err as Error).message);
@@ -291,15 +287,6 @@ export function ImportView({
                   placeholder="PL61 1090 1014 …"
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Enable Banking account ID (optional)</label>
-                <input
-                  className="input"
-                  value={newApiAccountId}
-                  onChange={(e) => setNewApiAccountId(e.target.value)}
-                  placeholder="07cc67f4-45d6-494b-adac-09b5cbc7e2b5"
-                />
-              </div>
             </div>
             <div className="form-row" style={{ marginTop: 8 }}>
               <button type="submit" className="btn btn-primary">
@@ -312,7 +299,6 @@ export function ImportView({
                   setShowNewAccount(false);
                   setNewAccountName("");
                   setNewAccountNumber("");
-                  setNewApiAccountId("");
                   setAccountError(null);
                 }}
               >

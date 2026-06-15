@@ -311,14 +311,6 @@ body {
   white-space: nowrap;
 }
 
-.sidebar-account-no-api {
-  flex-shrink: 0;
-  color: var(--text-dim);
-  opacity: 0.5;
-  font-size: 14px;
-  line-height: 1;
-}
-
 .sidebar-account-row {
   display: flex;
   align-items: stretch;
@@ -362,13 +354,6 @@ body {
   margin-bottom: 4px;
   font-weight: 600;
 }
-.sidebar-edit-label-hint {
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 400;
-  opacity: 0.7;
-}
-
 .sidebar-delete-panel {
   margin: 0 8px 4px 8px;
   padding: 8px 12px 10px;
@@ -1074,22 +1059,6 @@ body {
   margin-bottom: 20px;
 }
 .error-text { color: var(--error); font-size: 12px; margin-top: 4px; }
-
-.api-sync-control {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 5px;
-  max-width: 360px;
-}
-.api-sync-note {
-  color: var(--text-dim);
-  font-size: 11px;
-  line-height: 1.35;
-  text-align: right;
-}
-.api-sync-note--success { color: var(--secondary); }
-.api-sync-note--error { color: var(--error); }
 
 .dashboard-footer-actions {
   display: flex;
